@@ -77,16 +77,23 @@ Accepts a GitHub repository URL and returns an LLM-generated summary.
 **Request body**
 
 ```json
-{"github_url": "https://github.com/psf/requests"\}
+{"github_url": "https://github.com/psf/requests"}
 ```
 
 **Success response (200)**
 
 ```json
 {
-  "summary": "Requests is a popular Python HTTP library ...",
-  "technologies": ["Python", "urllib3", "certifi", "charset-normalizer"],
-  "structure": "The main source code lives in src/requests/, tests in tests/, and docs in docs/."
+  "summary": "Requests is a simple, elegant HTTP library for Python. It abstracts the complexity of making HTTP requests behind a clean API, allowing users to send HTTP/1.1 requests with methods such as GET, POST, PUT, DELETE, and more. The library handles cookies, sessions, authentication, SSL verification, and connection pooling automatically, and is widely considered the de-facto standard for HTTP in Python.",
+  "technologies": [
+    "Python",
+    "urllib3",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "pytest"
+  ],
+  "structure": "The main source code is in src/requests/ and includes modules for sessions, adapters, auth, cookies, exceptions, and utils. Tests live in tests/. Documentation source is in docs/. Build and packaging configuration is in pyproject.toml and setup.cfg."
 }
 ```
 
@@ -163,3 +170,45 @@ Sending an entire repository to an LLM is impractical — too many files, too ma
 6. **Excluded** — `node_modules/`, `.git/`, `dist/`, vendored dirs, binary files, lock files, generated files, files > 200 KB
 
 A directory tree is always included regardless of budget. Total context sent to the LLM is capped at 80,000 characters by default.
+
+## Troubleshooting
+
+### Server won't start
+
+| Symptom | Fix |
+|---------|-----|
+| `ModuleNotFoundError: No module named 'fastapi'` | Activate the venv (`source .venv/bin/activate`) and re-run `pip install -r requirements.txt` |
+| `Address already in use` on port 8000 | Kill the existing process: `pkill -f 'uvicorn main:app'`, then restart |
+| `.env` values ignored | Ensure `.env` is in the project root (same directory as `main.py`) and has no quotes around values |
+
+### API errors
+
+| Response | Cause | Fix |
+|----------|-------|-----|
+| `503 LLM not configured` | `ANTHROPIC_API_KEY` is missing or not loaded | Check `.env` has `ANTHROPIC_API_KEY=sk-ant-...` with no surrounding quotes |
+| `503 Your credit balance is too low` | Anthropic account has no credits | Add credits at [console.anthropic.com](https://console.anthropic.com) → Plans & Billing |
+| `429 GitHub rate limit exceeded` | Unauthenticated requests are capped at 60/hr | Set `GITHUB_TOKEN=ghp_...` in `.env` to raise the limit to 5,000/hr |
+| `404 Repository not found` | Repo doesn't exist, is misspelled, or is private without a token | Double-check the URL; for private repos add `GITHUB_TOKEN` with `repo` scope |
+| `422 Invalid GitHub URL` | URL is not in `https://github.com/<owner>/<repo>` format | Use the exact GitHub web URL (`.git` suffix and `/tree/branch` paths are also accepted) |
+| `504 LLM request timed out` | Anthropic API took longer than 60 s | Retry the request; reduce context by lowering `MAX_SOURCE_FILES` or `CONTEXT_CHAR_BUDGET` |
+
+### Slow or low-quality summaries
+
+- **Too slow**: lower `MAX_SOURCE_FILES` (default 6) or `CONTEXT_CHAR_BUDGET` (default 80000) in `.env`.
+- **Summary too vague**: raise `MAX_SOURCE_FILES` or `CONTEXT_CHAR_BUDGET` to give the model more context.
+- **Wrong model**: set `ANTHROPIC_MODEL` in `.env` to any model you have access to (e.g. `claude-3-haiku-20240307` for faster/cheaper responses).
+
+### Verifying the pipeline without LLM credits
+
+You can confirm that GitHub fetching and processing work independently — only the final LLM call requires credits:
+
+```bash
+# Health endpoint (no LLM needed)
+curl http://localhost:8000/health
+
+# Error handling works without credits too
+curl -X POST http://localhost:8000/summarize \
+  -H "Content-Type: application/json" \
+  -d '{"github_url": "https://github.com/doesnotexist99999/fakerepo"}'
+# Expected: {"status": "error", "message": "Repository or resource not found ..."}
+```
