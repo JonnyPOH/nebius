@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 ANTHROPIC_API_URL: str = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_MODEL: str = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+ANTHROPIC_MODEL: str = os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
 ANTHROPIC_VERSION: str = "2023-06-01"
 # Request timeout in seconds (connect + read)
 _TIMEOUT: float = float(os.getenv("LLM_TIMEOUT", "60"))

@@ -42,7 +42,7 @@ ANTHROPIC_API_KEY=sk-ant-api03-...
 GITHUB_TOKEN=ghp_...
 
 # Optional – tune processing behaviour
-# ANTHROPIC_MODEL=claude-3-5-sonnet-20241022   # default
+# ANTHROPIC_MODEL=claude-3-haiku-20240307      # default
 # CONTEXT_CHAR_BUDGET=80000                    # default: 80 000 chars sent to LLM
 # MAX_BLOB_BYTES=200000                        # default: skip files larger than 200 KB
 # MAX_SOURCE_FILES=6                           # default: max source files included
@@ -196,7 +196,7 @@ A directory tree is always included regardless of budget. Total context sent to 
 
 - **Too slow**: lower `MAX_SOURCE_FILES` (default 6) or `CONTEXT_CHAR_BUDGET` (default 80000) in `.env`.
 - **Summary too vague**: raise `MAX_SOURCE_FILES` or `CONTEXT_CHAR_BUDGET` to give the model more context.
-- **Wrong model**: set `ANTHROPIC_MODEL` in `.env` to any model you have access to (e.g. `claude-3-haiku-20240307` for faster/cheaper responses).
+- **Wrong model**: set `ANTHROPIC_MODEL` in `.env` to any model your key can access (e.g. `claude-3-haiku-20240307` is the widest-access default; `claude-3-5-sonnet-20241022` requires a paid tier).
 
 ### Verifying the pipeline without LLM credits
 
