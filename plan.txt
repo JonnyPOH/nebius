@@ -1,0 +1,33 @@
+Execution Plan (Timeboxed)
+
+0:00–0:45: Project bootstrap
+
+Fill requirements.txt (fastapi, uvicorn, httpx, pydantic, python-dotenv, optional PyGithub).
+Implement app skeleton + request/response models in main.py.
+Add health check (GET /health) and basic error envelope.
+0:45–2:15: GitHub fetch layer
+
+In github_fetcher.py: parse/validate GitHub URL, call GitHub API, collect file tree + raw content for selected files.
+Handle rate-limit/404/private repo/network failures with clear exceptions.
+2:15–3:45: Repo preprocessing (core evaluation point)
+
+In repo_processor.py: implement “importance scoring” + truncation policy.
+Include first: README*, pyproject.toml, package.json, requirements*.txt, setup.py, Dockerfile, Makefile, top-level config, and 3–8 key source files.
+Exclude: binaries, lockfiles (optional), vendored dirs, huge generated files, node_modules, .git, large test snapshots.
+3:45–5:00: LLM integration
+
+In llm_client.py: Nebius token factory flow + LLM call wrapper with timeout/retry.
+Force strict JSON output schema: summary, technologies[], structure.
+Add fallback parse/validation when model returns malformed JSON.
+5:00–6:00: Wire endpoint end-to-end
+
+In main.py, implement /summarize: validate input → fetch → process → prompt → parse → return response.
+Add scenario-2 error response shape from your spec.
+6:00–7:00: Manual test pass + polish
+
+Test with psf/requests and 1–2 other repos via curl.
+Tune prompt and selection weights if output quality is weak.
+7:00–8:00: README + submission hardening
+
+Add exact setup/run/test commands in README.md.
+Include env vars, expected response examples, and common failure troubleshooting.
