@@ -1,14 +1,5 @@
 """
-repo_processor.py
------------------
-Responsible for:
-  1. Scoring / prioritising files in the repository tree.
-  2. Selecting the most informative files within a token budget.
-  3. Fetching the content of selected files via github_fetcher.
-  4. Building a single context string ready to hand to the LLM.
-
-Public surface used by main.py:
-  build_context(repo_data: RepoData) -> str
+repo_processor.py — File prioritisation, context budget management, and LLM context assembly.
 """
 
 from __future__ import annotations
@@ -18,10 +9,6 @@ import os
 from dataclasses import dataclass, field
 
 from github_fetcher import RepoData, fetch_file_contents
-
-# ---------------------------------------------------------------------------
-# Budget
-# ---------------------------------------------------------------------------
 
 # Conservative character budget — leaves headroom for the LLM prompt itself.
 # Roughly 80 k chars ≈ 20 k tokens at ~4 chars/token.
@@ -35,9 +22,6 @@ _TREE_CAP: int = 6_000    # max chars for the rendered directory tree
 # they are almost always generated, vendored, or binary-adjacent.
 _MAX_BLOB_BYTES: int = int(os.getenv("MAX_BLOB_BYTES", 200_000))
 
-# ---------------------------------------------------------------------------
-# File-selection rules
-# ---------------------------------------------------------------------------
 # Each entry is (glob_pattern, priority_score, per_file_char_cap | None).
 # Lower score = higher priority. Files not matching any rule get score 99.
 # Git-ignored / vendor dirs are filtered out before scoring.
@@ -208,9 +192,6 @@ _GENERATED_PATTERNS: tuple[str, ...] = (
 # Keeps the payload focused: 3 files minimum, 8 files maximum.
 _MAX_SOURCE_FILES: int = int(os.getenv("MAX_SOURCE_FILES", 6))
 
-# ---------------------------------------------------------------------------
-# Scoring helpers
-# ---------------------------------------------------------------------------
 
 @dataclass(order=True)
 class _ScoredFile:
@@ -221,7 +202,6 @@ class _ScoredFile:
 
 
 def _is_excluded(path: str) -> bool:
-    """Return True if the file lives under an excluded directory."""
     for prefix in _EXCLUDED_DIRS:
         if path.startswith(prefix) or f"/{prefix}" in path:
             return True
@@ -229,7 +209,6 @@ def _is_excluded(path: str) -> bool:
 
 
 def _is_binary(path: str) -> bool:
-    """Return True if the file extension is in the binary exclusion list."""
     lower = path.lower()
     for ext in _BINARY_EXTENSIONS:
         if lower.endswith(ext):
@@ -238,7 +217,6 @@ def _is_binary(path: str) -> bool:
 
 
 def _is_generated(path: str) -> bool:
-    """Return True if the file matches a known generated-file pattern."""
     basename = _basename(path)
     for pattern in _GENERATED_PATTERNS:
         if fnmatch.fnmatch(path, pattern) or fnmatch.fnmatch(basename, pattern):
@@ -307,26 +285,15 @@ def _select_files(tree_blobs: list[dict]) -> list[_ScoredFile]:
         else:
             source_candidates.append(sf)
 
-    # Sort guaranteed files by (score, depth) — important manifests first, shallower first
     guaranteed.sort()
-
-    # Sort source candidates by (score, depth) and take the top _MAX_SOURCE_FILES.
-    # Depth tiebreaker means top-level files (main.py, app.py, index.ts) beat nested ones.
     source_candidates.sort()
     selected_sources = source_candidates[:_MAX_SOURCE_FILES]
 
     return guaranteed + selected_sources
 
 
-# ---------------------------------------------------------------------------
-# Tree renderer
-# ---------------------------------------------------------------------------
-
 def _render_tree(tree: list[dict]) -> str:
-    """
-    Render the file tree as an indented ASCII listing, capped at _TREE_CAP chars.
-    Only shows blobs (files), using their paths to imply directory structure.
-    """
+    # TODO: handle truncated tree warning back to caller
     lines: list[str] = ["<directory_tree>"]
     for entry in tree:
         if entry["type"] == "blob" and not _is_excluded(entry["path"]) and not _is_binary(entry["path"]):
@@ -340,10 +307,6 @@ def _render_tree(tree: list[dict]) -> str:
         result = result[:_TREE_CAP] + "\n… (tree truncated)"
     return result
 
-
-# ---------------------------------------------------------------------------
-# Context builder
-# ---------------------------------------------------------------------------
 
 def _truncate(content: str, cap: int, path: str) -> str:
     if len(content) <= cap:

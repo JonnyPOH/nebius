@@ -1,15 +1,5 @@
 """
-github_fetcher.py
------------------
-Responsible for:
-  1. Parsing and validating a GitHub repository URL.
-  2. Fetching repository metadata from the GitHub REST API.
-  3. Fetching the full recursive file tree.
-  4. Providing a helper to fetch raw content of specific files.
-
-Public surface used by the rest of the app:
-  fetch_repo(url: str) -> RepoData
-  fetch_file_contents(owner, repo, paths, ref, token) -> dict[str, str]
+github_fetcher.py — GitHub URL parsing, REST API calls, file tree + content fetching.
 """
 
 from __future__ import annotations
@@ -80,16 +70,9 @@ class RepoData(TypedDict):
 # ---------------------------------------------------------------------------
 
 GITHUB_API = "https://api.github.com"
-# Regex accepts:
-#   https://github.com/owner/repo
-#   https://github.com/owner/repo/
-#   https://github.com/owner/repo/tree/branch
-#   http variant
 _URL_RE = re.compile(
     r"^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/?#]+?)(?:\.git)?(?:/.*)?$"
 )
-# GitHub's maximum tree size before it truncates; we warn but continue
-_MAX_TREE_ENTRIES = 100_000
 
 
 # ---------------------------------------------------------------------------
@@ -264,14 +247,10 @@ def fetch_repo(url: str) -> RepoData:
             params={"recursive": "1"},
         ).json()
 
-        if tree_resp.get("truncated"):
-            # Repository has > 100k entries; we still proceed with what we have
-            pass
-
         tree: list[TreeEntry] = [
             TreeEntry(
                 path=entry["path"],
-                type=entry["type"],       # "blob" or "tree"
+                type=entry["type"],
                 size=entry.get("size", 0),
             )
             for entry in tree_resp.get("tree", [])

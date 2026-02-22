@@ -5,7 +5,7 @@ A FastAPI service that accepts a GitHub repository URL, fetches its contents, an
 ## Prerequisites
 
 - Python 3.11 or higher
-- An [Anthropic API key](https://console.anthropic.com/) with available credits
+- An [Anthropic API key](https://console.anthropic.com/) — or a [Nebius Token Factory key](https://studio.nebius.ai/) for submission (set `NEBIUS_API_KEY` and update `llm_client.py`)
 - (Optional) A [GitHub personal access token](https://github.com/settings/tokens) to raise the API rate limit from 60 to 5,000 requests/hour
 
 ## Installation
@@ -42,10 +42,10 @@ ANTHROPIC_API_KEY=sk-ant-api03-...
 GITHUB_TOKEN=ghp_...
 
 # Optional – tune processing behaviour
-# ANTHROPIC_MODEL=claude-3-haiku-20240307      # default
-# CONTEXT_CHAR_BUDGET=80000                    # default: 80 000 chars sent to LLM
-# MAX_BLOB_BYTES=200000                        # default: skip files larger than 200 KB
-# MAX_SOURCE_FILES=6                           # default: max source files included
+# ANTHROPIC_MODEL=claude-3-haiku-20240307  # default
+# CONTEXT_CHAR_BUDGET=80000               # default: 80 000 chars sent to LLM
+# MAX_BLOB_BYTES=200000                   # default: skip files larger than 200 KB
+# MAX_SOURCE_FILES=6                      # default: max source files included
 ```
 
 ## Running the Server
@@ -155,8 +155,13 @@ Open `http://localhost:8000/docs` in a browser to explore the OpenAPI interface.
 | `main.py` | FastAPI app, request/response models, endpoint wiring |
 | `github_fetcher.py` | GitHub URL parsing, REST API calls, file tree + content fetching |
 | `repo_processor.py` | File prioritisation, exclusions, budget management, context building |
-| `llm_client.py` | Anthropic API client, retry logic, strict JSON parsing |
+| `llm_client.py` | LLM API client (Anthropic / Nebius), retry logic, JSON parsing |
 | `requirements.txt` | Python dependencies |
+
+## Model Choice
+
+**`meta-llama/Llama-3.3-70B-Instruct`** (default) via the Nebius Token Factory.
+Llama 3.3 70B was chosen because it reliably follows structured JSON output instructions, has a large enough context window for repository contents, and is readily available on Nebius with low latency.
 
 ## How Repo Content Is Processed
 
@@ -173,42 +178,11 @@ A directory tree is always included regardless of budget. Total context sent to 
 
 ## Troubleshooting
 
-### Server won't start
-
 | Symptom | Fix |
 |---------|-----|
-| `ModuleNotFoundError: No module named 'fastapi'` | Activate the venv (`source .venv/bin/activate`) and re-run `pip install -r requirements.txt` |
-| `Address already in use` on port 8000 | Kill the existing process: `pkill -f 'uvicorn main:app'`, then restart |
-| `.env` values ignored | Ensure `.env` is in the project root (same directory as `main.py`) and has no quotes around values |
-
-### API errors
-
-| Response | Cause | Fix |
-|----------|-------|-----|
-| `503 LLM not configured` | `ANTHROPIC_API_KEY` is missing or not loaded | Check `.env` has `ANTHROPIC_API_KEY=sk-ant-...` with no surrounding quotes |
-| `503 Your credit balance is too low` | Anthropic account has no credits | Add credits at [console.anthropic.com](https://console.anthropic.com) → Plans & Billing |
-| `429 GitHub rate limit exceeded` | Unauthenticated requests are capped at 60/hr | Set `GITHUB_TOKEN=ghp_...` in `.env` to raise the limit to 5,000/hr |
-| `404 Repository not found` | Repo doesn't exist, is misspelled, or is private without a token | Double-check the URL; for private repos add `GITHUB_TOKEN` with `repo` scope |
-| `422 Invalid GitHub URL` | URL is not in `https://github.com/<owner>/<repo>` format | Use the exact GitHub web URL (`.git` suffix and `/tree/branch` paths are also accepted) |
-| `504 LLM request timed out` | Anthropic API took longer than 60 s | Retry the request; reduce context by lowering `MAX_SOURCE_FILES` or `CONTEXT_CHAR_BUDGET` |
-
-### Slow or low-quality summaries
-
-- **Too slow**: lower `MAX_SOURCE_FILES` (default 6) or `CONTEXT_CHAR_BUDGET` (default 80000) in `.env`.
-- **Summary too vague**: raise `MAX_SOURCE_FILES` or `CONTEXT_CHAR_BUDGET` to give the model more context.
-- **Wrong model**: set `ANTHROPIC_MODEL` in `.env` to any model your key can access (e.g. `claude-3-haiku-20240307` is the widest-access default; `claude-3-5-sonnet-20241022` requires a paid tier).
-
-### Verifying the pipeline without LLM credits
-
-You can confirm that GitHub fetching and processing work independently — only the final LLM call requires credits:
-
-```bash
-# Health endpoint (no LLM needed)
-curl http://localhost:8000/health
-
-# Error handling works without credits too
-curl -X POST http://localhost:8000/summarize \
-  -H "Content-Type: application/json" \
-  -d '{"github_url": "https://github.com/doesnotexist99999/fakerepo"}'
-# Expected: {"status": "error", "message": "Repository or resource not found ..."}
-```
+| `ModuleNotFoundError: No module named 'fastapi'` | Activate the venv and re-run `pip install -r requirements.txt` |
+| `Address already in use` on port 8000 | Run `pkill -f 'uvicorn main:app'` then restart |
+| `503 LLM not configured` | Check `.env` has `ANTHROPIC_API_KEY=sk-ant-...` with no surrounding quotes |
+| `429 GitHub rate limit exceeded` | Set `GITHUB_TOKEN=ghp_...` in `.env` to raise the limit to 5,000 req/hr |
+| `404 Repository not found` | Double-check the URL; for private repos add `GITHUB_TOKEN` with `repo` scope |
+| `504 LLM request timed out` | Retry; reduce context by lowering `MAX_SOURCE_FILES` or `CONTEXT_CHAR_BUDGET` |

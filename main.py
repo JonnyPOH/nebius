@@ -30,9 +30,6 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-# ---------------------------------------------------------------------------
-# Request / Response models
-# ---------------------------------------------------------------------------
 
 class SummarizeRequest(BaseModel):
     github_url: HttpUrl = Field(
@@ -63,9 +60,6 @@ class ErrorResponse(BaseModel):
         }
     }
 
-# ---------------------------------------------------------------------------
-# App
-# ---------------------------------------------------------------------------
 
 app = FastAPI(
     title="GitHub Repository Summarizer",
@@ -76,13 +70,7 @@ app = FastAPI(
     version="0.1.0",
 )
 
-
-# ---------------------------------------------------------------------------
-# Global error envelope
-# Ensures every error response — validation, HTTP, or unexpected — uses
-# the same {"status": "error", "message": "..."} shape.
-# ---------------------------------------------------------------------------
-
+# every error goes through these handlers so the shape is always {"status": "error", ...}
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     return JSONResponse(
@@ -111,9 +99,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         content=ErrorResponse(message=f"Unexpected error: {exc}").model_dump(),
     )
 
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
 
 class HealthResponse(BaseModel):
     status: Literal["ok"] = "ok"
@@ -144,19 +129,7 @@ def health_check() -> HealthResponse:
     summary="Summarise a GitHub repository",
 )
 def summarize_repo(payload: SummarizeRequest) -> SummarizeSuccessResponse:
-    """
-    Pipeline: validate input → fetch repo → build context → call LLM → parse → return.
-
-    **Scenario 1 (success)**
-    ```json
-    {"summary": "...", "technologies": ["Python", ...], "structure": "..."}
-    ```
-
-    **Scenario 2 (error)**
-    ```json
-    {"status": "error", "message": "..."}
-    ```
-    """
+    """Validate input → fetch repo → build context → call LLM → return summary."""
     url = str(payload.github_url)
     logger.info("[summarize] START url=%s", url)
 
