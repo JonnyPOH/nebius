@@ -1,7 +1,4 @@
-"""main.py — FastAPI entry point."""
-
 import logging
-from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -27,7 +24,7 @@ def health():
 
 
 @app.post("/summarize")
-def summarize_repo(body: Optional[SummarizeRequest] = None, github_url: Optional[str] = None):
+def summarize_repo(body: SummarizeRequest | None = None, github_url: str | None = None):
     github_url = (body.github_url if body else None) or github_url
     if not github_url:
         raise HTTPException(422, "github_url is required (query param or JSON body)")

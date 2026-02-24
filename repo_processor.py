@@ -1,5 +1,3 @@
-"""repo_processor.py — file prioritisation, context budget management, and LLM context assembly."""
-
 from __future__ import annotations
 
 import fnmatch
@@ -167,13 +165,13 @@ def _render_tree(tree: list[dict]) -> str:
             lines.append("  " * depth + _basename(entry["path"]))
     lines.append("</directory_tree>")
     result = "\n".join(lines)
-    return result if len(result) <= _TREE_CAP else result[:_TREE_CAP] + "\n… (tree truncated)"
+    return result if len(result) <= _TREE_CAP else result[:_TREE_CAP] + "\n...(tree truncated)"
 
 
 def _truncate(content: str, cap: int, path: str) -> str:
     if len(content) <= cap:
         return content
-    return content[:cap] + f"\n… (truncated at {cap} chars: {path})"
+    return content[:cap] + f"\n...(truncated at {cap} chars)"
 
 
 def build_context(repo_data: RepoData) -> str:

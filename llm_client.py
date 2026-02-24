@@ -1,5 +1,3 @@
-"""llm_client.py — calls Anthropic, parses the JSON back out."""
-
 from __future__ import annotations
 
 import json
@@ -35,24 +33,17 @@ class SummaryResult(TypedDict):
 
 
 _SYSTEM_PROMPT = """\
-You are a senior software engineer. Analyse a GitHub repository and return a structured JSON summary.
+You are a senior software engineer reviewing a GitHub repository.
 
-Respond with ONLY a valid JSON object — no markdown, no code fences, no prose.
-Your entire response must be parseable by json.loads().
+Return ONLY a valid JSON object — no markdown, no code fences, nothing outside the braces.
 
-Schema:
 {
-  "summary":      string,   // one concise paragraph: what the project does, who it is for, notable features
-  "technologies": string[], // every meaningful language, framework, library, tool identified
-  "structure":    string    // one paragraph: directory layout and how the code is divided
+  "summary":      string,   // what the project does and who it's for, one paragraph (≤ 200 words)
+  "technologies": string[], // languages, frameworks, libraries, tools — short names, no versions
+  "structure":    string    // how the repo is laid out, one paragraph (≤ 150 words)
 }
 
-Constraints:
-- Output ONLY the JSON object. Nothing before '{' or after '}'.
-- "summary"      — plain text, ≤ 200 words.
-- "technologies" — short name strings (e.g. "Python", "FastAPI"). No version numbers. No duplicates.
-- "structure"    — plain text, ≤ 150 words.
-- Do NOT add extra keys. Do NOT wrap in a code block.
+No extra keys. No duplicates in technologies.
 """
 
 
@@ -86,23 +77,23 @@ def _call_api(context: str, api_key: str) -> str:
             resp = httpx.post(ANTHROPIC_API_URL, headers=headers, json=payload, timeout=_TIMEOUT)
         except httpx.TimeoutException as exc:
             last_exc = exc
-            logger.warning("LLM timeout (attempt %d/%d)", attempt, _MAX_ATTEMPTS)
+            logger.warning("timeout on attempt %d/%d", attempt, _MAX_ATTEMPTS)
         except httpx.RequestError as exc:
             last_exc = exc
-            logger.warning("LLM network error (attempt %d/%d): %s", attempt, _MAX_ATTEMPTS, exc)
+            logger.warning("network error on attempt %d/%d: %s", attempt, _MAX_ATTEMPTS, exc)
         else:
             if resp.status_code == 429:
                 wait = float(resp.headers.get("retry-after", _BACKOFF_BASE * (2 ** attempt)))
                 logger.warning("rate limited, waiting %.1fs", wait)
-                last_exc = LLMResponseError(f"Rate limited (429), retry after {wait}s.")
+                last_exc = LLMResponseError(f"Rate limited, retry after {wait}s.")
                 time.sleep(wait)
                 continue
 
             if resp.status_code in {500, 502, 503, 504, 529}:
-                last_exc = LLMResponseError(f"Anthropic server error {resp.status_code}.")
+                last_exc = LLMResponseError(f"Server error {resp.status_code}.")
                 logger.warning("server error %d (attempt %d/%d)", resp.status_code, attempt, _MAX_ATTEMPTS)
             elif resp.status_code == 401:
-                raise LLMConfigError("Anthropic returned 401 — check your ANTHROPIC_API_KEY.")
+                raise LLMConfigError("Got 401 — check your ANTHROPIC_API_KEY.")
             elif not resp.is_success:
                 raise LLMResponseError(f"Unexpected status {resp.status_code}: {resp.text[:300]}")
             else:

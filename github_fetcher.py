@@ -1,5 +1,3 @@
-"""github_fetcher.py — GitHub URL parsing, REST API calls, file tree + content fetching."""
-
 from __future__ import annotations
 
 import base64
@@ -59,7 +57,7 @@ def _get(client: httpx.Client, url: str, token: str | None, **kwargs) -> httpx.R
         raise GitHubNetworkError(f"Network error: {exc}") from exc
 
     if resp.status_code == 401:
-        raise GitHubPrivateRepoError("GitHub returned 401 Unauthorized. Check your GITHUB_TOKEN.")
+        raise GitHubPrivateRepoError("GitHub returned 401 — check your GITHUB_TOKEN.")
 
     if resp.status_code == 403:
         remaining = resp.headers.get("X-RateLimit-Remaining", "1")
@@ -70,26 +68,20 @@ def _get(client: httpx.Client, url: str, token: str | None, **kwargs) -> httpx.R
             reset_str = reset_at.strftime("%Y-%m-%d %H:%M:%S UTC") if reset_at else "unknown time"
             wait_hint = f" Retry after {retry_after}s." if retry_after else ""
             raise GitHubRateLimitError(
-                f"Rate limit exceeded, resets at {reset_str}.{wait_hint} "
-                "Set GITHUB_TOKEN to get 5,000 req/hr instead of 60.",
+                f"Rate limit exceeded, resets at {reset_str}.{wait_hint}",
                 reset_at=reset_at,
             )
         body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
         raise GitHubPrivateRepoError(
-            f"Access denied (403): {body.get('message', 'Forbidden')}. "
-            "Repo may be private or your token may need 'repo' scope."
+            f"Access denied (403): {body.get('message', 'Forbidden')}."
         )
 
     if resp.status_code == 404:
-        hint = " If private, set GITHUB_TOKEN with 'repo' scope." if not token else ""
-        raise GitHubNotFoundError(f"Not found (404): {url}.{hint}")
+        raise GitHubNotFoundError(f"Not found (404): {url}.")
 
     if resp.status_code == 422:
         body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
-        raise GitHubError(
-            f"GitHub couldn't process request (422): {body.get('message', 'Unprocessable Entity')}. "
-            "Repo may be empty."
-        )
+        raise GitHubError(f"Unprocessable (422): {body.get('message', 'repo may be empty')}.")
 
     if resp.status_code == 451:
         raise GitHubNotFoundError(f"Repo unavailable for legal reasons (451): {url}.")
