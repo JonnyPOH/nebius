@@ -198,7 +198,6 @@ def build_context(repo_data):
     owner = repo_data["owner"]
     repo = repo_data["repo"]
     ref = repo_data["ref"]
-    token = repo_data["token"]
     tree = repo_data["tree"]
 
     # Files only. Select the most useful (highest score from prev def)
@@ -208,7 +207,7 @@ def build_context(repo_data):
 
     # Fetch all file contents
     paths = [path for _, _, path, _ in selected]
-    raw_contents = fetch_file_contents(owner, repo, paths, ref, token)
+    raw_contents = fetch_file_contents(owner, repo, paths, ref)
 
     # build the repo header
     header_parts = [f"Repository: {owner}/{repo}", f"Default branch: {repo_data['branch']}"]
