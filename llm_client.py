@@ -1,14 +1,24 @@
-from __future__ import annotations
+"""Client for calling the LLM API and parsing its responses"""
 
+
+#------------------ Imports ------------------#
 import json
 import logging
 import os
 import re
 import time
-from typing import TypedDict
-
 import httpx
 
+
+#------------------ Classes ------------------#
+class LLMError(RuntimeError): pass
+class LLMConfigError(LLMError): pass
+class LLMTimeoutError(LLMError): pass
+class LLMResponseError(LLMError): pass
+class LLMParseError(LLMError): pass
+
+
+#------------------ Variables ------------------#
 logger = logging.getLogger(__name__)
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
@@ -17,20 +27,6 @@ ANTHROPIC_VERSION = "2023-06-01"
 _TIMEOUT = float(os.getenv("LLM_TIMEOUT", "60"))
 _MAX_ATTEMPTS = int(os.getenv("LLM_MAX_ATTEMPTS", "3"))
 _BACKOFF_BASE = float(os.getenv("LLM_BACKOFF_BASE", "2"))
-
-
-class LLMError(RuntimeError): pass
-class LLMConfigError(LLMError): pass
-class LLMTimeoutError(LLMError): pass
-class LLMResponseError(LLMError): pass
-class LLMParseError(LLMError): pass
-
-
-class SummaryResult(TypedDict):
-    summary: str
-    technologies: list[str]
-    structure: str
-
 
 _SYSTEM_PROMPT = """\
 You are a senior software engineer reviewing a GitHub repository.
@@ -47,17 +43,15 @@ No extra keys. No duplicates in technologies.
 """
 
 
-def _api_key() -> str:
+#------------------ Functions ------------------#
+def _api_key():
     key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if not key:
-        raise LLMConfigError(
-            "ANTHROPIC_API_KEY environment variable is not set. "
-            "Add it to your .env file or export it in your shell."
-        )
+        raise LLMConfigError("ANTHROPIC_API_KEY is not set. Add it to your .env file or export it in your shell.")
     return key
 
 
-def _call_api(context: str, api_key: str) -> str:
+def _call_api(context, api_key):
     headers = {
         "x-api-key": api_key,
         "anthropic-version": ANTHROPIC_VERSION,
@@ -70,7 +64,7 @@ def _call_api(context: str, api_key: str) -> str:
         "messages": [{"role": "user", "content": f"Analyse the repository context below and return the JSON summary.\n\n{context}\n\nJSON response:"}],
     }
 
-    last_exc: Exception | None = None
+    last_exc = None
 
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
@@ -100,7 +94,7 @@ def _call_api(context: str, api_key: str) -> str:
                 for block in resp.json().get("content", []):
                     if block.get("type") == "text":
                         return block["text"]
-                raise LLMResponseError("No text content in Anthropic response.")
+                raise LLMResponseError("No text content in response.")
 
         if attempt < _MAX_ATTEMPTS:
             time.sleep(_BACKOFF_BASE * (2 ** (attempt - 1)))
@@ -110,7 +104,7 @@ def _call_api(context: str, api_key: str) -> str:
     raise LLMResponseError(f"Failed after {_MAX_ATTEMPTS} attempt(s).") from last_exc
 
 
-def _extract_json(text: str) -> str:
+def _extract_json(text):
     fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     if fence:
         return fence.group(1)
@@ -120,7 +114,7 @@ def _extract_json(text: str) -> str:
     return text
 
 
-def _validate_result(obj: dict) -> SummaryResult:
+def _validate_result(obj):
     missing = {"summary", "technologies", "structure"} - obj.keys()
     if missing:
         raise LLMParseError(f"Missing key(s): {missing}")
@@ -141,10 +135,10 @@ def _validate_result(obj: dict) -> SummaryResult:
     if not isinstance(structure, str) or not structure.strip():
         raise LLMParseError('"structure" must be a non-empty string')
 
-    return SummaryResult(summary=summary.strip(), technologies=techs, structure=structure.strip())
+    return {"summary": summary.strip(), "technologies": techs, "structure": structure.strip()}
 
 
-def _parse_response(raw: str) -> SummaryResult:
+def _parse_response(raw):
     for candidate in (raw, _extract_json(raw)):
         try:
             return _validate_result(json.loads(candidate))
@@ -153,5 +147,5 @@ def _parse_response(raw: str) -> SummaryResult:
     raise LLMParseError(f"Could not parse LLM response. Raw (first 300 chars): {raw[:300]}")
 
 
-def get_summary(context: str) -> SummaryResult:
+def get_summary(context):
     return _parse_response(_call_api(context, _api_key()))

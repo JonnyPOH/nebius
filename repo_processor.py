@@ -1,68 +1,71 @@
-from __future__ import annotations
+'''Processing GitHub repo and building a context string for LLM input'''
 
+
+#------------------ Imports ------------------#
 import fnmatch
 import logging
 import os
-from dataclasses import dataclass, field
+from github_fetcher import fetch_file_contents
 
-from github_fetcher import RepoData, fetch_file_contents
 
+#------------------ Variables ------------------#
 logger = logging.getLogger(__name__)
 
-TOTAL_CHAR_BUDGET = int(os.getenv("CONTEXT_CHAR_BUDGET", 80_000))
+# hardcoded
+TOTAL_CHAR_BUDGET = 80_000
 _FILE_CAP = 15_000
 _TREE_CAP = 6_000
-_MAX_BLOB_BYTES = int(os.getenv("MAX_BLOB_BYTES", 200_000))
-_MAX_SOURCE_FILES = int(os.getenv("MAX_SOURCE_FILES", 6))
+_MAX_BLOB_BYTES = 200_000
+_MAX_SOURCE_FILES = 6
 _SOURCE_TIER_THRESHOLD = 5
 
-_PRIORITY_RULES: list[tuple[str, int, int | None]] = [
-    ("README*",                 0,  20_000),
-    ("readme*",                 0,  20_000),
-    ("pyproject.toml",          1,  5_000),
-    ("setup.py",                1,  5_000),
-    ("setup.cfg",               1,  4_000),
-    ("requirements*.txt",       1,  3_000),
-    ("package.json",            1,  5_000),
-    ("go.mod",                  1,  3_000),
-    ("Cargo.toml",              1,  5_000),
-    ("Gemfile",                 1,  3_000),
-    ("pom.xml",                 1,  5_000),
-    ("build.gradle*",           1,  5_000),
-    ("*.csproj",                1,  5_000),
-    ("Dockerfile",              2,  4_000),
-    ("Dockerfile.*",            2,  4_000),
-    ("docker-compose*.yml",     2,  4_000),
-    ("docker-compose*.yaml",    2,  4_000),
-    ("Makefile",                2,  4_000),
-    (".env.example",            3,  2_000),
-    (".env.sample",             3,  2_000),
-    (".github/workflows/*.yml", 3,  3_000),
-    ("*.toml",                  3,  4_000),
-    ("*.yaml",                  3,  4_000),
-    ("*.yml",                   3,  4_000),
-    ("*.py",                    5, 10_000),
-    ("*.ts",                    5, 10_000),
-    ("*.tsx",                   5, 10_000),
-    ("*.js",                    5, 10_000),
-    ("*.go",                    5, 10_000),
-    ("*.rs",                    5, 10_000),
-    ("*.java",                  5, 10_000),
-    ("*.rb",                    5, 10_000),
-    ("*.cs",                    5, 10_000),
-    ("*.cpp",                   5, 10_000),
-    ("*.c",                     5, 10_000),
-    ("*.kt",                    5, 10_000),
-    ("*.swift",                 5, 10_000),
-    ("package-lock.json",       90, 0),
-    ("yarn.lock",               90, 0),
-    ("Cargo.lock",              90, 0),
-    ("Pipfile.lock",            90, 0),
-    ("poetry.lock",             90, 0),
-    ("go.sum",                  90, 0),
-    ("*.lock",                  90, 0),
-    ("*.min.js",                90, 0),
-    ("*.min.css",               90, 0),
+_PRIORITY_RULES = [
+    ("README*", 0, 20_000),
+    ("readme*", 0, 20_000),
+    ("pyproject.toml", 1, 5_000),
+    ("setup.py", 1, 5_000),
+    ("setup.cfg", 1, 4_000),
+    ("requirements*.txt", 1, 3_000),
+    ("package.json", 1, 5_000),
+    ("go.mod", 1, 3_000),
+    ("Cargo.toml", 1, 5_000),
+    ("Gemfile", 1, 3_000),
+    ("pom.xml", 1, 5_000),
+    ("build.gradle*", 1, 5_000),
+    ("*.csproj", 1, 5_000),
+    ("Dockerfile", 2, 4_000),
+    ("Dockerfile.*", 2, 4_000),
+    ("docker-compose*.yml", 2, 4_000),
+    ("docker-compose*.yaml", 2, 4_000),
+    ("Makefile", 2, 4_000),
+    (".env.example", 3, 2_000),
+    (".env.sample", 3, 2_000),
+    (".github/workflows/*.yml", 3, 3_000),
+    ("*.toml", 3, 4_000),
+    ("*.yaml", 3, 4_000),
+    ("*.yml", 3, 4_000),
+    ("*.py", 5, 10_000),
+    ("*.ts", 5, 10_000),
+    ("*.tsx", 5, 10_000),
+    ("*.js", 5, 10_000),
+    ("*.go", 5, 10_000),
+    ("*.rs", 5, 10_000),
+    ("*.java", 5, 10_000),
+    ("*.rb", 5, 10_000),
+    ("*.cs", 5, 10_000),
+    ("*.cpp", 5, 10_000),
+    ("*.c", 5, 10_000),
+    ("*.kt", 5, 10_000),
+    ("*.swift", 5, 10_000),
+    ("package-lock.json", 90, 0),
+    ("yarn.lock", 90, 0),
+    ("Cargo.lock", 90, 0),
+    ("Pipfile.lock", 90, 0),
+    ("poetry.lock", 90, 0),
+    ("go.sum", 90, 0),
+    ("*.lock", 90, 0),
+    ("*.min.js", 90, 0),
+    ("*.min.css", 90, 0),
 ]
 
 _EXCLUDED_DIRS = (
@@ -79,7 +82,7 @@ _EXCLUDED_DIRS = (
     ".idea/", ".vscode/", ".eggs/", "*.egg-info/",
 )
 
-_BINARY_EXTENSIONS = frozenset({
+_BINARY_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".tiff",
     ".svg", ".woff", ".woff2", ".ttf", ".eot", ".otf",
     ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
@@ -90,7 +93,7 @@ _BINARY_EXTENSIONS = frozenset({
     ".mp3", ".mp4", ".wav", ".avi", ".mov", ".webm", ".ogg",
     ".min.js", ".min.css", ".map",
     ".parquet", ".pickle", ".pkl", ".npy", ".npz", ".h5", ".hdf5", ".proto",
-})
+}
 
 _GENERATED_PATTERNS = (
     "*.snap", "*.snapshot",
@@ -101,95 +104,118 @@ _GENERATED_PATTERNS = (
 )
 
 
-@dataclass(order=True)
-class _ScoredFile:
-    score: int
-    depth: int
-    path: str = field(compare=False)
-    char_cap: int = field(compare=False)
+#------------------ Functions ------------------#
 
-
-def _basename(path: str) -> str:
-    return path.rsplit("/", 1)[-1]
-
-
-def _is_excluded(path: str) -> bool:
+# skipping excluded dirs
+def _is_excluded(path):
     return any(path.startswith(p) or f"/{p}" in path for p in _EXCLUDED_DIRS)
 
-
-def _is_binary(path: str) -> bool:
+# skipping excluded extensions
+def _is_binary(path):
     return any(path.lower().endswith(ext) for ext in _BINARY_EXTENSIONS)
 
+# skip auto-generated files
+def _is_generated(path):
+    basename = os.path.basename(path)
+    return any(fnmatch.fnmatch(path, p) or fnmatch.fnmatch(basename, p) for p in _GENERATED_PATTERNS)
 
-def _is_generated(path: str) -> bool:
-    basename = _basename(path)
-    return any(
-        fnmatch.fnmatch(path, p) or fnmatch.fnmatch(basename, p)
-        for p in _GENERATED_PATTERNS
-    )
-
-
-def _score_file(path: str) -> tuple[int, int]:
-    basename = _basename(path)
-    best_score, best_cap = 99, _FILE_CAP
+# iterate through priority rules, returns (priority_score, char_cap) — lower score means higher priority
+def _score_file(path):
+    basename = os.path.basename(path)
+    best_score, best_cap = 99, _FILE_CAP  # 99 = unmatched, low priority
     for pattern, score, cap in _PRIORITY_RULES:
         if fnmatch.fnmatch(path, pattern) or fnmatch.fnmatch(basename, pattern):
             if score < best_score:
                 best_score = score
-                best_cap = cap if cap is not None else _FILE_CAP
+                best_cap = cap
     return best_score, best_cap
 
 
-def _select_files(blobs: list[dict]) -> list[_ScoredFile]:
-    guaranteed, source_candidates = [], []
+# scores and splits blobs into guaranteed files and source candidates, caps source at _MAX_SOURCE_FILES
+def _select_files(blobs):
+    # always include : readmes, manifets, configs
+    guaranteed = []
+
+    # include as many within budget
+    source_candidates = []
+
     for entry in blobs:
-        path, size = entry["path"], entry.get("size", 0)
+        path = entry["path"]
+        size = entry.get("size", 0)
+
+        # skips specified from above
         if _is_excluded(path) or _is_binary(path) or _is_generated(path):
             continue
+
+        # skips empty or large files
         if size == 0 or size > _MAX_BLOB_BYTES:
             continue
+
         score, cap = _score_file(path)
+
+        # skips cap of 0
         if cap == 0:
             continue
-        sf = _ScoredFile(score=score, depth=path.count("/"), path=path, char_cap=cap)
-        (guaranteed if score < _SOURCE_TIER_THRESHOLD else source_candidates).append(sf)
 
-    return sorted(guaranteed) + sorted(source_candidates)[:_MAX_SOURCE_FILES]
+        row = (score, path.count("/"), path, cap)
+
+        if score < _SOURCE_TIER_THRESHOLD:
+            guaranteed.append(row)
+        else:
+            source_candidates.append(row)
+
+    guaranteed.sort()
+    source_candidates.sort()
+    return guaranteed + source_candidates[:_MAX_SOURCE_FILES]
 
 
-def _render_tree(tree: list[dict]) -> str:
+# Input: List of dicts. Output: XML style string. Truncated if it gets too long.
+def _render_tree(tree):
     lines = ["<directory_tree>"]
+
     for entry in tree:
-        if entry["type"] == "blob" and not _is_excluded(entry["path"]) and not _is_binary(entry["path"]):
-            depth = entry["path"].count("/")
-            lines.append("  " * depth + _basename(entry["path"]))
+        if entry["type"] != "blob":
+            continue
+        path = entry["path"]
+        if _is_excluded(path) or _is_binary(path):
+            continue
+        # indent by depth so it looks like a real tree
+        indent = "  " * path.count("/")
+        lines.append(indent + os.path.basename(path))
+
     lines.append("</directory_tree>")
     result = "\n".join(lines)
-    return result if len(result) <= _TREE_CAP else result[:_TREE_CAP] + "\n...(tree truncated)"
+
+    # truncate if too long
+    if len(result) > _TREE_CAP:
+        result = result[:_TREE_CAP] + "\n...(tree truncated)"
+
+    return result
 
 
-def _truncate(content: str, cap: int, path: str) -> str:
-    if len(content) <= cap:
-        return content
-    return content[:cap] + f"\n...(truncated at {cap} chars)"
+# Main entry point. Output: Single string for the LLM. Input from github_fetcher
+def build_context(repo_data):
+    owner = repo_data["owner"]
+    repo = repo_data["repo"]
+    ref = repo_data["ref"]
+    token = repo_data["token"]
+    tree = repo_data["tree"]
 
-
-def build_context(repo_data: RepoData) -> str:
-    owner, repo, ref, token, tree = (
-        repo_data["owner"], repo_data["repo"], repo_data["ref"],
-        repo_data["token"], repo_data["tree"],
-    )
-
+    # Files only. Select the most useful (highest score from prev def)
     blobs = [e for e in tree if e["type"] == "blob"]
     selected = _select_files(blobs)
     logger.info("selected %d files for context", len(selected))
 
-    raw_contents = fetch_file_contents(owner, repo, [f.path for f in selected], ref, token)
+    # Fetch all file contents
+    paths = [path for _, _, path, _ in selected]
+    raw_contents = fetch_file_contents(owner, repo, paths, ref, token)
 
+    # build the repo header
     header_parts = [f"Repository: {owner}/{repo}", f"Default branch: {repo_data['branch']}"]
-    for key, label in [("description", "Description"), ("language", "Primary language")]:
-        if repo_data.get(key):
-            header_parts.append(f"{label}: {repo_data[key]}")
+    if repo_data.get("description"):
+        header_parts.append(f"Description: {repo_data['description']}")
+    if repo_data.get("language"):
+        header_parts.append(f"Primary language: {repo_data['language']}")
     if repo_data.get("topics"):
         header_parts.append(f"Topics: {', '.join(repo_data['topics'])}")
 
@@ -197,19 +223,18 @@ def build_context(repo_data: RepoData) -> str:
         "<repo_info>\n" + "\n".join(header_parts) + "\n</repo_info>",
         _render_tree(tree),
     ]
-    chars_used = sum(len(s) for s in sections)
+    chars_used = len(sections[0]) + len(sections[1])
 
-    for scored in selected:
+    # add files individually until character budget hit
+    for _, _, path, char_cap in selected:
         if chars_used >= TOTAL_CHAR_BUDGET:
             break
-        content = raw_contents.get(scored.path)
+        content = raw_contents.get(path)
         if not content:
             continue
-        remaining = TOTAL_CHAR_BUDGET - chars_used
-        if remaining <= 0:
-            break
-        body = _truncate(content, min(scored.char_cap, remaining), scored.path)
-        block = f"<file path=\"{scored.path}\">\n{body}\n</file>"
+        cap = min(char_cap, TOTAL_CHAR_BUDGET - chars_used)
+        body = content[:cap] + f"\n...(truncated at {cap} chars)" if len(content) > cap else content
+        block = f"<file path=\"{path}\">\n{body}\n</file>"
         sections.append(block)
         chars_used += len(block)
 
