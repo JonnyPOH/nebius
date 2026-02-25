@@ -106,20 +106,20 @@ _GENERATED_PATTERNS = (
 
 #------------------ Functions ------------------#
 
-# skipping excluded dirs
+# skip paths inside vendor/build/cache dirs
 def _is_excluded(path):
     return any(path.startswith(p) or f"/{p}" in path for p in _EXCLUDED_DIRS)
 
-# skipping excluded extensions
+# skip image, font, archive, compiled and other non-text files
 def _is_binary(path):
     return any(path.lower().endswith(ext) for ext in _BINARY_EXTENSIONS)
 
-# skip auto-generated files
+# skip auto-generated files like protobuf outputs, snapshots, bundles
 def _is_generated(path):
     basename = os.path.basename(path)
     return any(fnmatch.fnmatch(path, p) or fnmatch.fnmatch(basename, p) for p in _GENERATED_PATTERNS)
 
-# iterate through priority rules, returns (priority_score, char_cap) — lower score means higher priority
+# returns (priority_score, char_cap) — lower score means higher priority
 def _score_file(path):
     basename = os.path.basename(path)
     best_score, best_cap = 99, _FILE_CAP  # 99 = unmatched, low priority
@@ -133,27 +133,22 @@ def _score_file(path):
 
 # scores and splits blobs into guaranteed files and source candidates, caps source at _MAX_SOURCE_FILES
 def _select_files(blobs):
-    # always include : readmes, manifets, configs
-    guaranteed = []
-
-    # include as many within budget
-    source_candidates = []
+    guaranteed = []      # readmes, manifests, configs — always include
+    source_candidates = []  # source files — capped at _MAX_SOURCE_FILES
 
     for entry in blobs:
         path = entry["path"]
         size = entry.get("size", 0)
 
-        # skips specified from above
         if _is_excluded(path) or _is_binary(path) or _is_generated(path):
             continue
 
-        # skips empty or large files
+        # skip empty or huge files
         if size == 0 or size > _MAX_BLOB_BYTES:
             continue
 
         score, cap = _score_file(path)
 
-        # skips cap of 0
         if cap == 0:
             continue
 
@@ -169,7 +164,7 @@ def _select_files(blobs):
     return guaranteed + source_candidates[:_MAX_SOURCE_FILES]
 
 
-# Input: List of dicts. Output: XML style string. Truncated if it gets too long.
+# builds an indented directory listing, truncated if it gets too long
 def _render_tree(tree):
     lines = ["<directory_tree>"]
 
@@ -193,19 +188,19 @@ def _render_tree(tree):
     return result
 
 
-# Main entry point. Output: Single string for the LLM. Input from github_fetcher
+# main entry point — takes repo_data from github_fetcher, returns a single context string for the LLM
 def build_context(repo_data):
     owner = repo_data["owner"]
     repo = repo_data["repo"]
     ref = repo_data["ref"]
     tree = repo_data["tree"]
 
-    # Files only. Select the most useful (highest score from prev def)
+    # filter down to files only and score/select the most useful ones
     blobs = [e for e in tree if e["type"] == "blob"]
     selected = _select_files(blobs)
     logger.info("selected %d files for context", len(selected))
 
-    # Fetch all file contents
+    # fetch all file contents in one batch
     paths = [path for _, _, path, _ in selected]
     raw_contents = fetch_file_contents(owner, repo, paths, ref)
 
@@ -224,7 +219,7 @@ def build_context(repo_data):
     ]
     chars_used = len(sections[0]) + len(sections[1])
 
-    # add files individually until character budget hit
+    # add files one by one until we hit the character budget
     for _, _, path, char_cap in selected:
         if chars_used >= TOTAL_CHAR_BUDGET:
             break
