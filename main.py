@@ -1,3 +1,6 @@
+'''FastAPI app that exposes the summarization endpoint.'''
+
+#------------------ Imports ------------------#
 import logging
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -7,6 +10,8 @@ from github_fetcher import fetch_repo, GitHubURLError
 from repo_processor import build_context
 from llm_client import get_summary, LLMTimeoutError
 
+
+#------------------ Variables ------------------#
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -14,6 +19,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="GitHub Repo Summariser", version="0.1.0")
 
 
+#------------------ Classes ------------------#
 # request body model
 class SummarizeRequest(BaseModel):
     github_url: str
@@ -24,6 +30,7 @@ def health():
     return {"status": "ok", "version": app.version}
 
 
+#------------------ Functions ------------------#
 # main endpoint — fetches repo, builds context, returns LLM summary
 @app.post("/summarize")
 def summarize_repo(body: SummarizeRequest):

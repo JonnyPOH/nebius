@@ -1,4 +1,4 @@
-"""Client for calling the Anthropic API and parsing the response"""
+"""Client for calling the Nebius Token Factory API and parsing the response"""
 
 
 #------------------ Imports ------------------#
@@ -15,11 +15,10 @@ class LLMTimeoutError(LLMError): pass
 
 
 #------------------ Variables ------------------#
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_VERSION = "2023-06-01"
+NEBIUS_API_URL = "https://api.tokenfactory.nebius.com/v1/chat/completions"
 
 # hardcoded
-ANTHROPIC_MODEL = "claude-3-haiku-20240307"
+NEBIUS_MODEL = "meta-llama/Llama-3.3-70B-Instruct"
 _TIMEOUT = 60
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 2
@@ -31,7 +30,7 @@ Return ONLY a valid JSON object with exactly these keys:
 
 {
   "summary": "what the project does, who it's for, and why someone would use it (max 200 words)",
-  "technologies": ["languages", "frameworks", "and tools used — short names only, no versions"],
+  "technologies": ["direct dependencies and languages only — not dev tools, CI, or docs tooling"],
   "structure": "how the codebase is organised and where the important parts live (max 150 words)"
 }
 
@@ -42,29 +41,30 @@ No markdown, no code fences, no extra keys, no duplicate technologies.
 
 #------------------ Functions ------------------#
 
-# sends context to anthropic, retries on failure, returns raw text
+# sends context to nebius, retries on failure, returns raw text
 def _call_api(context):
     # check api key exists
-    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    api_key = os.getenv("NEBIUS_API_KEY", "").strip()
     if not api_key:
-        raise LLMError("ANTHROPIC_API_KEY is not set.")
+        raise LLMError("NEBIUS_API_KEY is not set.")
 
     headers = {
-        "x-api-key": api_key,
-        "anthropic-version": ANTHROPIC_VERSION,
-        "content-type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
     }
     payload = {
-        "model": ANTHROPIC_MODEL,
+        "model": NEBIUS_MODEL,
         "max_tokens": 1024,
-        "system": _SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": f"Analyse this repository and return the JSON summary.\n\n{context}\n\nJSON response:"}],
+        "messages": [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": f"Analyse this repository and return the JSON summary.\n\n{context}\n\nJSON response:"},
+        ],
     }
 
     # try up to _MAX_ATTEMPTS times
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
-            resp = httpx.post(ANTHROPIC_API_URL, headers=headers, json=payload, timeout=_TIMEOUT)
+            resp = httpx.post(NEBIUS_API_URL, headers=headers, json=payload, timeout=_TIMEOUT)
         except httpx.TimeoutException:
             time.sleep(_BACKOFF_BASE * attempt)
             continue
@@ -75,9 +75,8 @@ def _call_api(context):
             time.sleep(_BACKOFF_BASE * attempt)
             continue
 
-        for block in resp.json().get("content", []):
-            if block.get("type") == "text":
-                return block["text"]
+        # pull text out of the response
+        return resp.json()["choices"][0]["message"]["content"]
 
     raise LLMTimeoutError(f"Failed after {_MAX_ATTEMPTS} attempt(s).")
 

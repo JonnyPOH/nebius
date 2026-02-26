@@ -20,9 +20,11 @@ _URL_RE = re.compile(r"^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/?#]+?)
 
 #------------------ Functions ------------------#
 
-# makes GET requests with required github headers
-def _get(client, url, **kwargs):
+# makes GET requests with required github headers, optional token raises rate limit from 60 to 5000/hr
+def _get(client, url, token=None, **kwargs):
     headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     resp = client.get(url, headers=headers, timeout=20, **kwargs)
     resp.raise_for_status()
     return resp
@@ -35,20 +37,22 @@ def fetch_repo(url):
         raise GitHubURLError(f"Invalid GitHub URL: '{url}'")
 
     owner, repo_name = m.group("owner"), m.group("repo")
+    token = os.getenv("GITHUB_TOKEN")
 
     with httpx.Client(follow_redirects=True) as client:
         # repo metadata — description, language, topics, default branch
-        meta = _get(client, f"{GITHUB_API}/repos/{owner}/{repo_name}").json()
+        meta = _get(client, f"{GITHUB_API}/repos/{owner}/{repo_name}", token).json()
         branch = meta["default_branch"]
 
         # need the latest commit SHA to fetch the tree
-        branch_data = _get(client, f"{GITHUB_API}/repos/{owner}/{repo_name}/branches/{branch}").json()
+        branch_data = _get(client, f"{GITHUB_API}/repos/{owner}/{repo_name}/branches/{branch}", token).json()
         ref = branch_data["commit"]["sha"]
 
         # full recursive file tree
         tree_resp = _get(
             client,
             f"{GITHUB_API}/repos/{owner}/{repo_name}/git/trees/{ref}",
+            token,
             params={"recursive": "1"},
         ).json()
 
@@ -61,11 +65,12 @@ def fetch_repo(url):
         "language": meta.get("language"),
         "topics": meta.get("topics", []),
         "tree": tree_resp.get("tree", []),
+        "token": token,
     }
 
 
 # fetches raw text content for a list of paths, returns a dict of path -> decoded content
-def fetch_file_contents(owner, repo, paths, ref):
+def fetch_file_contents(owner, repo, paths, ref, token=None):
     results = {}
 
     with httpx.Client(follow_redirects=True) as client:
@@ -74,6 +79,7 @@ def fetch_file_contents(owner, repo, paths, ref):
                 data = _get(
                     client,
                     f"{GITHUB_API}/repos/{owner}/{repo}/contents/{path}",
+                    token,
                     params={"ref": ref},
                 ).json()
             except Exception:

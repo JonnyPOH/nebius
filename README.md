@@ -22,7 +22,10 @@ pip install -r requirements.txt
 Create a `.env` file in the project root:
 
 ```
-ANTHROPIC_API_KEY=sk-ant-api03-...
+NEBIUS_API_KEY=XXXXXXXXXXXXXXX
+
+# optional — raises GitHub rate limit from 60 to 5000 requests/hr
+GITHUB_TOKEN=ghp_...
 ```
 
 ## Running
@@ -39,11 +42,11 @@ curl -X POST http://localhost:8000/summarize \
   -d '{"github_url": "https://github.com/psf/requests"}'
 ```
 
-Or open `http://localhost:8000/docs` to use the interactive API.
+Check the service is running at `http://localhost:8000/health`, or open `http://localhost:8000/docs` for the interactive API.
 
 ## Model
 
-`claude-3-haiku-20240307` — fast, cheap, and reliably follows structured JSON instructions. Good enough for summarisation without needing a larger model.
+`meta-llama/Llama-3.3-70B-Instruct` via Nebius Token Factory — reliably follows structured JSON instructions, has a large enough context window for repository contents, and is readily available on Nebius with low latency.
 
 ## How repo content is processed
 
