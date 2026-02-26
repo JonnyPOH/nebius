@@ -22,7 +22,7 @@ pip install -r requirements.txt
 Create a `.env` file in the project root:
 
 ```
-NEBIUS_API_KEY=XXXXXXXXXXXXXXX
+NEBIUS_API_KEY=your_key_here
 
 # optional — raises GitHub rate limit from 60 to 5000 requests/hr
 GITHUB_TOKEN=ghp_...
@@ -46,8 +46,14 @@ Check the service is running at `http://localhost:8000/health`, or open `http://
 
 ## Model
 
-`meta-llama/Llama-3.3-70B-Instruct` via Nebius Token Factory — reliably follows structured JSON instructions, has a large enough context window for repository contents, and is readily available on Nebius with low latency.
+`meta-llama/Llama-3.3-70B-Instruct` via Nebius Token Factory — reliably follows structured JSON instructions and has a large enough context window for repository contents.
 
 ## How repo content is processed
 
-Sending an entire repo to an LLM is impractical, so files are prioritised by type. READMEs, dependency manifests, Dockerfiles and CI config are always included. Source files (*.py, *.ts, *.go etc.) are included up to a cap of 6. Anything in node_modules, build output, binary files, lock files, generated files, or files over 200KB gets skipped. A directory tree is always included. Total context is capped at 80,000 characters — enough to understand the project without wasting tokens on noise.
+Files are prioritised by type:
+
+- Always included: READMEs, dependency manifests, Dockerfiles, CI config, directory tree
+- Up to 6 files: source code (*.py, *.ts, *.go etc.)
+- Skipped: node_modules, build output, binary files, lock files, generated files, files over 200KB
+
+Total context is capped at 80,000 characters — enough to understand the project without wasting tokens on noise.
