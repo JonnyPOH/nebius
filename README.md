@@ -1,4 +1,4 @@
-# GitHub Repository Summarizer
+# GitHub Repository Summariser
 
 A FastAPI service that takes a GitHub repository URL and returns an LLM-generated summary of what the project does, the technologies it uses, and how it's structured.
 
@@ -19,6 +19,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+If `source .venv/bin/activate` doesn't change your prompt, use the venv binaries directly:
+
+```bash
+.venv/bin/pip install -r requirements.txt
+```
+
 Create a `.env` file in the project root:
 
 ```
@@ -34,6 +40,12 @@ GITHUB_TOKEN=ghp_...
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
+Or if using the venv directly:
+
+```bash
+.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
 ## Usage
 
 ```bash
@@ -42,7 +54,7 @@ curl -X POST http://localhost:8000/summarize \
   -d '{"github_url": "https://github.com/psf/requests"}'
 ```
 
-Check the service is running at `http://localhost:8000/health`, or open `http://localhost:8000/docs` for the interactive API.
+Replace the URL with any public GitHub repository of your choice. Open `http://localhost:8000/docs` for the interactive API.
 
 ## Model
 
